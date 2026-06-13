@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="44" fill="#6B4A2F"/>
+  <!-- 책 본체 -->
+  <rect x="50" y="40" width="92" height="112" rx="5" fill="#EDE4D3"/>
+  <!-- 책 등 (spine) -->
+  <rect x="50" y="40" width="16" height="112" rx="5" fill="#C0472B"/>
+  <rect x="58" y="40" width="8" height="112" fill="#A03822"/>
+  <!-- 본문 줄 -->
+  <rect x="78" y="62" width="52" height="7" rx="3" fill="#2A2018" opacity=".28"/>
+  <rect x="78" y="77" width="42" height="5" rx="2" fill="#2A2018" opacity=".2"/>
+  <rect x="78" y="90" width="48" height="5" rx="2" fill="#2A2018" opacity=".2"/>
+  <rect x="78" y="103" width="36" height="5" rx="2" fill="#2A2018" opacity=".2"/>
+  <!-- 한 줄 (accent line) -->
+  <rect x="78" y="122" width="52" height="7" rx="3" fill="#C0472B" opacity=".65"/>
+  <!-- 금박 점 -->
+  <circle cx="96" cy="146" r="4" fill="#C89B3C" opacity=".8"/>
+</svg>

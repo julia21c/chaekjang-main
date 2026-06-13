@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>오늘의 한 칸 — 독서 책장</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon.svg">
+<meta name="theme-color" content="#6B4A2F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="한 칸">
+</head>
+<body>
+<div class="app">
+
+  <!-- 헤더 -->
+  <header>
+    <div class="eyebrow">오늘의 한 칸</div>
+    <div class="header-row">
+      <h1>나의 <span class="accent">책장</span></h1>
+      <button class="icon-btn" id="settingsBtn" aria-label="설정">⚙</button>
+    </div>
+    <div class="year-stat" id="yearStat">올해 <b>0</b>권 · 오늘 독서 <b>0</b>분</div>
+  </header>
+
+  <!-- 타이머 카드 -->
+  <div class="timer-card">
+    <div class="tc-label">숏츠 1시간 대신, <b>딱 20분</b>만 펼쳐요</div>
+    <div class="ring-wrap">
+      <div class="ring">
+        <svg width="208" height="208" viewBox="0 0 208 208">
+          <circle class="ring-bg" cx="104" cy="104" r="92"/>
+          <circle class="ring-fg" id="ringFg" cx="104" cy="104" r="92"/>
+        </svg>
+        <div class="ring-center">
+          <div class="ring-time" id="timeDisp">20:00</div>
+          <div class="ring-sub" id="ringSub">시작을 눌러요</div>
+        </div>
+      </div>
+    </div>
+    <div class="timer-actions">
+      <button class="btn btn-mini" id="setBtn">⏱ 분</button>
+      <button class="btn btn-primary" id="startBtn">시작</button>
+      <button class="btn btn-ghost" id="pauseBtn" style="display:none">일시정지</button>
+      <button class="btn btn-primary" id="resumeBtn" style="display:none">계속</button>
+      <button class="btn btn-ghost" id="stopBtn" style="display:none">그만두기</button>
+    </div>
+    <div class="streak" id="streakBox">
+      <span class="flame">🔥</span>
+      <span id="streakText">첫 20분을 시작해보세요</span>
+      <span class="dots" id="streakDots"></span>
+    </div>
+    <!-- 5분 비상 모드 버튼 -->
+    <div class="emergency-wrap">
+      <button class="btn-emergency" id="emergencyBtn">⚡ 딱 5분만</button>
+    </div>
+  </div>
+
+  <!-- 독서 잔디 히트맵 -->
+  <div class="heatmap-section">
+    <div class="heatmap-header">
+      <span class="heatmap-label">독서 잔디</span>
+      <span class="heatmap-count" id="heatmapCount">올해 0일</span>
+    </div>
+    <div class="heatmap-scroll" id="heatmapScroll">
+      <div class="heatmap-months" id="heatmapMonths"></div>
+      <div class="heatmap-grid" id="heatmapGrid"></div>
+    </div>
+  </div>
+
+  <!-- 탭 -->
+  <div class="tabs">
+    <button class="tab active" data-tab="read">읽은 책</button>
+    <button class="tab" data-tab="wish">읽고 싶은</button>
+    <button class="tab" data-tab="quotes">한 줄</button>
+  </div>
+
+  <!-- 책장 영역 -->
+  <div class="shelf-area">
+    <div id="readShelf"></div>
+    <div id="wishShelf" style="display:none"></div>
+    <div id="quotesShelf" style="display:none"></div>
+  </div>
+
+</div>
+
+<!-- 책 추가 FAB -->
+<div class="fab-bar">
+  <button class="fab" id="fabBtn">＋ 책 추가하기</button>
+</div>
+
+<!-- ===== 모달: 책 추가 ===== -->
+<div class="modal-bg" id="addModal">
+  <div class="modal">
+    <h2>책 추가</h2>
+    <div class="sub">제목으로 검색하면 표지가 함께 들어와요</div>
+    <div class="seg">
+      <button class="on" data-shelf="read" id="segRead">읽은 책</button>
+      <button data-shelf="wish" id="segWish">읽고 싶은</button>
+    </div>
+    <div class="field">
+      <label>책 제목</label>
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="예: 미움받을 용기" autocomplete="off">
+        <button class="search-btn" id="searchBtn">검색</button>
+      </div>
+    </div>
+    <div class="results" id="results"></div>
+    <div class="field" id="quoteField" style="display:none">
+      <label>책 속 한 줄 (선택)</label>
+      <textarea id="quoteInput" placeholder="마음에 남은 문장을 적어두세요"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelAdd">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 모달: 타이머 완료 축하 ===== -->
+<div class="modal-bg" id="doneModal">
+  <div class="modal celebrate">
+    <div class="big">📖✨</div>
+    <h2 id="doneTitle">20분 완독!</h2>
+    <div class="sub" id="doneSub">오늘 읽은 책에 한 줄을 남겨볼까요?</div>
+    <div id="donePickWrap">
+      <div class="book-pick" id="bookPick"></div>
+      <div class="field">
+        <textarea id="doneQuote" placeholder="오늘 읽은 책 속 한 문장"></textarea>
+      </div>
+      <button class="btn btn-primary" id="saveQuote" style="width:100%">책장에 꽂기</button>
+      <button class="del-btn" id="skipQuote" style="margin-top:10px">한 줄은 다음에</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 모달: 책 상세 ===== -->
+<div class="modal-bg" id="detailModal">
+  <div class="modal">
+    <h2 id="detailTitle"></h2>
+    <div class="sub" id="detailAuthor"></div>
+    <div class="detail-quote" id="detailQuote"></div>
+    <button class="del-btn" id="deleteBook">책장에서 빼기</button>
+    <button class="btn btn-ghost" id="closeDetail" style="width:100%;margin-top:8px">닫기</button>
+  </div>
+</div>
+
+<!-- ===== 모달: 타이머 분 설정 ===== -->
+<div class="modal-bg" id="timerSetModal">
+  <div class="modal">
+    <h2>독서 시간 설정</h2>
+    <div class="sub">오늘의 목표 시간을 고르세요</div>
+    <div class="preset-btns">
+      <button class="preset-btn" data-min="5">5분</button>
+      <button class="preset-btn" data-min="10">10분</button>
+      <button class="preset-btn active" data-min="20">20분</button>
+      <button class="preset-btn" data-min="30">30분</button>
+    </div>
+    <div class="field">
+      <label>직접 입력 (1~180분)</label>
+      <input type="number" id="timerMinInput" min="1" max="180" placeholder="20">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelTimerSet">닫기</button>
+      <button class="btn btn-primary" id="confirmTimerSet">설정하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 모달: 설정 (카카오 API 키) ===== -->
+<div class="modal-bg" id="settingsModal">
+  <div class="modal">
+    <h2>설정</h2>
+    <div class="sub">카카오 키를 넣으면 한국 책 표지가 더 정확해요</div>
+    <div class="field">
+      <label>카카오 REST API 키</label>
+      <input type="text" id="kakaoKeyInput" placeholder="키 없이도 구글북스로 검색돼요" autocomplete="off">
+      <div class="field-hint">developers.kakao.com → 내 애플리케이션 → REST API 키</div>
+    </div>
+    <div class="field">
+      <label>저녁 리마인더 시간</label>
+      <input type="time" id="reminderInput" value="21:00">
+      <div class="field-hint">이 시각에 "오늘의 20분" 알림이 와요 (이미 읽은 날은 건너뜀)</div>
+    </div>
+    <button class="btn-notify" id="notifyPermBtn">알림 권한 허용하기</button>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelSettings">닫기</button>
+      <button class="btn btn-primary" id="saveSettings">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 토스트 알림 -->
+<div class="toast" id="toast"></div>
+
+<script src="js/app.js"></script>
+<script>
+  // PWA Service Worker 등록 (HTTPS 또는 localhost에서만 동작)
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js')
+        .catch(() => {}); // 로컬 file:// 환경에서는 무시
+    });
+  }
+</script>
+</body>
+</html>
