@@ -2,11 +2,13 @@
    오늘의 한 칸 — Service Worker
    오프라인에서도 타이머·책장 열람 가능하도록 정적 자산 캐시
    ============================================================ */
-const CACHE = 'chaekjang-v1';
+const CACHE = 'chaekjang-v2';
 const ASSETS = [
   './',
   './index.html',
   './css/style.css',
+  './js/config.js',
+  './js/supabaseClient.js',
   './js/app.js',
   './manifest.json',
   './icons/icon.svg',

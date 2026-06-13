@@ -11,7 +11,8 @@ let state = {
   todayMin: 0,
   todayDate: '',    // 날짜가 바뀌면 todayMin 초기화용
   reminderTime: '', // 'HH:MM' 저녁 리마인더 시각
-  dailyMinutes: {}  // {'YYYY-MM-DD': 분} 날짜별 누적 독서 시간 — 독서 이력 표시용
+  dailyMinutes: {}, // {'YYYY-MM-DD': 분} 날짜별 누적 독서 시간 — 독서 이력 표시용
+  cloudSync: false  // Supabase 클라우드 동기화 켜짐 여부 (선택사항)
 };
 
 // 카카오 API 키 — 설정 모달에서 입력, localStorage에 별도 저장
@@ -165,6 +166,11 @@ function finishTimer() {
   // 날짜별 독서 시간 누적 — 독서 이력 표시용
   state.dailyMinutes[todayKey()] = (state.dailyMinutes[todayKey()] || 0) + state.timerMin;
   saveState();
+  // 클라우드 동기화 중이면 독서 로그도 함께 기록
+  if (state.cloudSync) {
+    supa.from('reading_logs').insert({ date: todayKey(), minutes: state.timerMin })
+      .then(({ error }) => { if (error) console.warn('독서 로그 동기화 실패', error); });
+  }
   if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
   stopTimer(true);
   // 링 골드 글로우 — 완료 축하 시그니처
@@ -226,6 +232,7 @@ $('#confirmTimerSet').onclick = () => {
     total = remain;
     paintRing();
     saveState();
+    if (state.cloudSync) syncSettingsToCloud();
     toast(`${n}분으로 설정했어요 ⏱`);
   }
   $('#timerSetModal').classList.remove('show');
@@ -240,6 +247,7 @@ $('#settingsBtn').onclick = () => {
   $('#kakaoKeyInput').value = KAKAO_KEY;
   $('#reminderInput').value = state.reminderTime || '21:00';
   updateNotifyBtn();
+  updateCloudSyncUI();
   $('#settingsModal').classList.add('show');
 };
 
@@ -250,6 +258,7 @@ $('#saveSettings').onclick = () => {
   localStorage.setItem('chaekjang_kakao_key', key);
   state.reminderTime = reminder;
   saveState();
+  if (state.cloudSync) syncSettingsToCloud();
   $('#settingsModal').classList.remove('show');
   toast('설정 저장됨 ✓');
 };
@@ -301,6 +310,170 @@ setInterval(() => {
     icon: 'icons/icon.svg'
   });
 }, 60000);
+
+// ============================================================
+//  클라우드 동기화 (Supabase, 익명 로그인)
+//  - 선택사항: 설정(⚙)에서 켜면 책장/한 줄/독서 로그/설정이
+//    Supabase에도 저장된다. 기본은 꺼짐(기기 저장만 사용 — 시작 마찰 0 유지).
+//  - 인증은 익명 로그인이라 기기별로 별도 계정이며,
+//    완전한 멀티기기 동기화가 아닌 "클라우드 백업" 용도다.
+//  - 네트워크 실패는 콘솔 경고만 남기고 기존 localStorage 동작을 막지 않는다.
+// ============================================================
+
+// 설정 모달의 동기화 상태 문구·버튼 텍스트 갱신
+function updateCloudSyncUI() {
+  const btn = $('#cloudSyncBtn');
+  const status = $('#cloudSyncStatus');
+  if (!btn || !status) return;
+  if (state.cloudSync) {
+    btn.textContent = '클라우드 동기화 끄기';
+    status.textContent = '이 기기의 데이터가 클라우드에도 저장되고 있어요 ☁';
+  } else {
+    btn.textContent = '클라우드 동기화 켜기';
+    status.textContent = '기기에만 저장돼요. 켜면 클라우드에도 백업돼요';
+  }
+}
+
+// 타이머 분 / 저녁 리마인더 / 카카오 키를 settings 테이블에 upsert
+async function syncSettingsToCloud() {
+  try {
+    const { error } = await supa.from('settings').upsert({
+      timer_minutes: state.timerMin,
+      reminder_time: state.reminderTime || null,
+      kakao_key: KAKAO_KEY || null
+    });
+    if (error) throw error;
+  } catch (e) {
+    console.warn('설정 동기화 실패', e);
+  }
+}
+
+// 클라우드 데이터를 불러와 로컬 상태를 덮어쓴다 (클라우드가 기준)
+async function pullFromCloud() {
+  try {
+    const [booksRes, quotesRes, logsRes, settingsRes] = await Promise.all([
+      supa.from('books').select('*').order('created_at', { ascending: false }),
+      supa.from('quotes').select('*'),
+      supa.from('reading_logs').select('*'),
+      supa.from('settings').select('*').maybeSingle()
+    ]);
+    if (booksRes.error) throw booksRes.error;
+
+    // 책 + 한 줄(quotes) 합치기
+    const quoteMap = {};
+    (quotesRes.data || []).forEach(q => { quoteMap[q.book_id] = q.text; });
+    state.books = (booksRes.data || []).map(b => ({
+      id: b.id,
+      title: b.title,
+      author: b.author || '',
+      cover: b.cover_url || '',
+      quote: quoteMap[b.id] || '',
+      shelf: b.shelf,
+      year: b.year
+    }));
+
+    // 독서 로그 → 날짜별 집계 (잔디·이력·스트릭 원천)
+    state.readDates = [];
+    state.dailyMinutes = {};
+    (logsRes.data || []).forEach(l => {
+      state.dailyMinutes[l.date] = (state.dailyMinutes[l.date] || 0) + l.minutes;
+      if (!state.readDates.includes(l.date)) state.readDates.push(l.date);
+    });
+
+    // 설정 반영
+    if (settingsRes.data) {
+      if (settingsRes.data.timer_minutes) state.timerMin = settingsRes.data.timer_minutes;
+      state.reminderTime = settingsRes.data.reminder_time || '';
+      if (settingsRes.data.kakao_key) {
+        KAKAO_KEY = settingsRes.data.kakao_key;
+        localStorage.setItem('chaekjang_kakao_key', KAKAO_KEY);
+      }
+    }
+
+    saveState();
+  } catch (e) {
+    console.warn('클라우드 데이터 불러오기 실패 (오프라인일 수 있어요)', e);
+  }
+}
+
+// 동기화를 처음 켤 때: 로컬 데이터를 클라우드로 1회 업로드
+async function pushLocalToCloud() {
+  for (const b of state.books) {
+    const { data, error } = await supa.from('books').insert({
+      title: b.title,
+      author: b.author || '',
+      cover_url: b.cover || '',
+      shelf: b.shelf,
+      year: b.year
+    }).select('id').single();
+    if (error) throw error;
+    if (b.quote) {
+      const { error: qErr } = await supa.from('quotes').insert({ book_id: data.id, text: b.quote });
+      if (qErr) throw qErr;
+    }
+    b.id = data.id; // 로컬 id를 클라우드 uuid로 교체
+  }
+
+  // 날짜별 독서 시간을 독서 로그로 업로드
+  const logs = Object.entries(state.dailyMinutes).map(([date, minutes]) => ({ date, minutes }));
+  if (logs.length) {
+    const { error } = await supa.from('reading_logs').insert(logs);
+    if (error) throw error;
+  }
+
+  await syncSettingsToCloud();
+  saveState();
+  renderShelves();
+}
+
+// 앱 시작 시: 동기화가 켜져 있으면 세션 확보 후 클라우드 데이터를 불러온다
+async function initCloudSync() {
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    if (!session) {
+      const { error } = await supa.auth.signInAnonymously();
+      if (error) throw error;
+    }
+    await pullFromCloud();
+  } catch (e) {
+    console.warn('클라우드 동기화 초기화 실패 (오프라인일 수 있어요)', e);
+  }
+}
+
+// 동기화 켜기 — 익명 로그인 + 기존 데이터 1회 업로드
+async function enableCloudSync() {
+  const btn = $('#cloudSyncBtn');
+  btn.disabled = true;
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    if (!session) {
+      const { error } = await supa.auth.signInAnonymously();
+      if (error) throw error;
+    }
+    await pushLocalToCloud();
+    state.cloudSync = true;
+    saveState();
+    updateCloudSyncUI();
+    toast('클라우드 동기화를 시작했어요 ☁');
+  } catch (e) {
+    console.warn('클라우드 동기화 연결 실패', e);
+    toast('동기화 연결에 실패했어요. 네트워크를 확인해주세요');
+  }
+  btn.disabled = false;
+}
+
+// 동기화 끄기 — 클라우드 데이터는 그대로 두고 이 기기만 로컬 저장으로 전환
+function disableCloudSync() {
+  state.cloudSync = false;
+  saveState();
+  updateCloudSyncUI();
+  toast('클라우드 동기화를 껐어요 (기기 저장은 유지돼요)');
+}
+
+$('#cloudSyncBtn').onclick = () => {
+  if (state.cloudSync) disableCloudSync();
+  else enableCloudSync();
+};
 
 // ============================================================
 //  독서 잔디 히트맵 (올해 1월부터 오늘까지)
@@ -547,6 +720,11 @@ function renderShelves() {
       renderShelves();
       renderStats();
       toast('읽은 책으로 옮겼어요 📖');
+      // 클라우드 동기화 중이면 책장 이동도 함께 반영
+      if (state.cloudSync) {
+        supa.from('books').update({ shelf: 'read', year: b.year }).eq('id', b.id)
+          .then(({ error }) => { if (error) console.warn('이동 동기화 실패', error); });
+      }
     });
   }
 }
@@ -646,8 +824,8 @@ function pickBook(b) {
   };
 }
 
-function addBook(b, shelf, quote = '') {
-  state.books.unshift({
+async function addBook(b, shelf, quote = '') {
+  const book = {
     id: Date.now() + Math.random().toString(36).slice(2, 6),
     title: b.title,
     author: b.author || '',
@@ -655,7 +833,8 @@ function addBook(b, shelf, quote = '') {
     quote: quote,
     shelf: shelf,
     year: thisYear()
-  });
+  };
+  state.books.unshift(book);
   saveState();
   renderShelves();
   renderStats();
@@ -665,6 +844,23 @@ function addBook(b, shelf, quote = '') {
       const first = $('#readShelf .book');
       if (first) first.classList.add('new-drop');
     }, 50);
+  }
+  // 클라우드 동기화 중이면 책(+한 줄)도 함께 저장
+  if (state.cloudSync) {
+    try {
+      const { data, error } = await supa.from('books').insert({
+        title: book.title, author: book.author, cover_url: book.cover, shelf: book.shelf, year: book.year
+      }).select('id').single();
+      if (error) throw error;
+      book.id = data.id; // 로컬 id를 클라우드 uuid로 교체
+      if (book.quote) {
+        await supa.from('quotes').insert({ book_id: book.id, text: book.quote });
+      }
+      saveState();
+      renderShelves();
+    } catch (e) {
+      console.warn('책 동기화 실패', e);
+    }
   }
 }
 
@@ -733,7 +929,14 @@ $('#saveQuote').onclick = () => {
   const q = $('#doneQuote').value.trim();
   if (donePickId && q) {
     const b = state.books.find(x => x.id == donePickId);
-    if (b) { b.quote = q; saveState(); renderShelves(); }
+    if (b) {
+      b.quote = q; saveState(); renderShelves();
+      // 클라우드 동기화 중이면 한 줄도 upsert (책당 1개)
+      if (state.cloudSync) {
+        supa.from('quotes').upsert({ book_id: b.id, text: q }, { onConflict: 'book_id' })
+          .then(({ error }) => { if (error) console.warn('한 줄 동기화 실패', error); });
+      }
+    }
     toast('한 줄을 책장에 새겼어요 ✍️');
     // 한 줄 탭이 열려있으면 즉시 갱신
     if (document.querySelector('.tab.active')?.dataset.tab === 'quotes') renderQuotes();
@@ -758,12 +961,18 @@ function openDetail(id) {
 }
 
 $('#deleteBook').onclick = () => {
+  const removedId = detailBookId;
   state.books = state.books.filter(x => x.id != detailBookId);
   saveState();
   renderShelves();
   renderStats();
   $('#detailModal').classList.remove('show');
   toast('책장에서 뺐어요');
+  // 클라우드 동기화 중이면 클라우드에서도 삭제
+  if (state.cloudSync) {
+    supa.from('books').delete().eq('id', removedId)
+      .then(({ error }) => { if (error) console.warn('삭제 동기화 실패', error); });
+  }
 };
 
 $('#closeDetail').onclick = () => $('#detailModal').classList.remove('show');
@@ -782,3 +991,17 @@ renderShelves();
 renderStats();
 renderStreak();
 renderHeatmap();
+
+// 클라우드 동기화가 켜져 있으면 최신 데이터를 받아와 화면을 다시 그린다
+if (state.cloudSync) {
+  initCloudSync().then(() => {
+    initTimerFromState();
+    renderShelves();
+    renderStats();
+    renderStreak();
+    renderHeatmap();
+    const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+    if (activeTab === 'quotes') renderQuotes();
+    if (activeTab === 'history') renderHistory();
+  });
+}

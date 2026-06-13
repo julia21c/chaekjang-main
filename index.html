@@ -189,6 +189,11 @@
       <div class="field-hint">이 시각에 "오늘의 20분" 알림이 와요 (이미 읽은 날은 건너뜀)</div>
     </div>
     <button class="btn-notify" id="notifyPermBtn">알림 권한 허용하기</button>
+    <div class="field">
+      <label>클라우드 동기화</label>
+      <div class="field-hint" id="cloudSyncStatus">기기에만 저장돼요. 켜면 클라우드에도 백업돼요</div>
+    </div>
+    <button class="btn-notify" id="cloudSyncBtn">클라우드 동기화 켜기</button>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="cancelSettings">닫기</button>
       <button class="btn btn-primary" id="saveSettings">저장</button>
@@ -199,6 +204,10 @@
 <!-- 토스트 알림 -->
 <div class="toast" id="toast"></div>
 
+<!-- Supabase 클라이언트 (클라우드 동기화용) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/supabaseClient.js"></script>
 <script src="js/app.js"></script>
 <script>
   // PWA Service Worker 등록 (HTTPS 또는 localhost에서만 동작)

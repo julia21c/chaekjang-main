@@ -34,19 +34,25 @@
 - **이력 탭 추가** (네 번째 탭): 날짜별 독서 시간 목록. "총 N일 · M분 독서" 요약 + 날짜·요일·분 카드, 최신순 정렬, 오늘 항목 강조
 - **데이터**: `state.dailyMinutes` ({'YYYY-MM-DD': 분}) 신설 — 타이머 완료 시 누적. 기존 `readDates`(히트맵용)는 유지
 
+### Day 6 — Supabase 클라우드 동기화(선택) (2026-06-13)
+- **설정(⚙) 모달에 "클라우드 동기화" 토글 추가**: 기본은 꺼짐(localStorage만 사용). 켜면 익명 로그인 후 책장/한 줄/독서 로그/설정을 Supabase에도 저장
+- **신규 파일**: `js/config.js`(SUPABASE_URL/ANON_KEY), `js/supabaseClient.js`(클라이언트 생성)
+- **js/app.js**: `state.cloudSync` 필드 + `initCloudSync`/`pullFromCloud`/`pushLocalToCloud`/`enableCloudSync`/`disableCloudSync`/`syncSettingsToCloud`/`updateCloudSyncUI` 신설. `addBook`, 책 삭제, 한 줄 저장, 위시→읽음 이동, 타이머 완료, 설정 저장에 동기화 훅 연결(모두 `if (state.cloudSync)` 가드, 실패 시 console.warn만 — 오프라인에서도 기존처럼 동작)
+- **service-worker.js**: `js/config.js`/`js/supabaseClient.js` 캐시 추가, `chaekjang-v1` → `chaekjang-v2`
+- **README.md**: Supabase 프로젝트 생성 → 익명 로그인 활성화 → SQL(스키마+RLS) → config.js 키 입력 → 동작 확인까지 전체 가이드 갱신. SQL에 `default auth.uid()`(클라이언트에서 user_id 생략 가능), `quotes.book_id unique`(책당 한 줄 upsert) 추가
+
 ---
 
 ## [진행 중 작업]
 
-없음 — v1 완료, 이력 탭 추가 완료
+없음 — v1 완료, 이력 탭 + Supabase 클라우드 동기화(선택) 추가 완료
 
 ---
 
 ## [다음 단계] — v2 후보 또는 필요 시 진행
 
-1. **Supabase 연동** — Auth + 4개 테이블(books/quotes/reading_logs/settings) + RLS
-   - 현재 localStorage 기반. 실사용·멀티기기 대응에 필요
-2. **한 줄 여러 개 저장** — 현재 책당 1개. quotes 테이블 연동 시 복수 저장 지원
+1. **실제 Supabase 프로젝트로 동기화 테스트** — README "직접 확인하는 법"대로 사용자가 본인 프로젝트 키를 `js/config.js`에 넣고 검증
+2. **한 줄 여러 개 저장** — 현재 책당 1개(`quotes.book_id unique`). v2에서 unique 제거 시 복수 저장 지원 가능
 3. **PWA 아이콘 고도화** — 현재 SVG 단일. iOS 홈 화면용 PNG 192/512px 필요
 4. v2 기능 (사용자 명시 요청 전 보류)
    - 연간 목표 게이지, 통계 대시보드, 별점·완독 리본, SNS 공유, 친구 비교
@@ -55,7 +61,7 @@
 
 ## [미결정 이슈]
 
-- **데이터 마이그레이션**: localStorage 데이터 → Supabase 전환 시 기존 데이터 처리 방법
+- **익명 인증의 멀티기기 한계**: 현재는 기기별로 별도 계정(클라우드 백업 용도). 같은 데이터를 여러 기기에서 보려면 이메일 연결을 통한 계정 업그레이드가 필요 — v2 후보
 - **카카오 키 보안**: 클라이언트 직접 호출 → Supabase Edge Function 프록시 경유 검토
 - **iOS 리마인더**: iOS 16.4+ PWA 설치 환경에서만 동작. 일반 Safari 브라우저 미지원
 

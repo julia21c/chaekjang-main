@@ -39,18 +39,31 @@ reading.html 더블클릭 → 끝
 
 ---
 
-## Supabase 연동 (실전 전환)
+## Supabase 연동 (선택사항 — 클라우드 동기화)
 
-### 1. 프로젝트 생성
-[supabase.com](https://supabase.com) → New Project → URL과 anon key 확보.
+기본 상태(아무 설정 없이)는 모든 데이터가 **이 기기의 localStorage에만** 저장된다.
+설정(⚙) 모달의 "클라우드 동기화 켜기"를 누르면 책장 · 한 줄 · 독서 이력 · 설정이
+Supabase에도 함께 저장된다. **켜지 않으면 평소처럼 그대로 동작**한다(시작 마찰 0 유지).
 
-### 2. 테이블 스키마 (SQL Editor에 붙여넣기)
+> 인증은 **익명 로그인**(로그인 화면 없음)이라, 기기별로 별도 계정이 생긴다.
+> 즉 "이 기기 데이터의 클라우드 백업"이며, 다른 기기와 자동으로 합쳐지는
+> 진정한 멀티기기 동기화는 아니다. (이메일 연결을 통한 업그레이드는 v2 후보)
+
+### 1. 프로젝트 생성 + 키 확보
+[supabase.com](https://supabase.com) → New Project 생성 후
+**Settings → API**에서 `Project URL`과 `anon public` 키를 복사해둔다.
+
+### 2. 익명 로그인 활성화 (필수, 기본값은 꺼짐)
+**Authentication → Providers → Anonymous Sign-Ins**를 켠다.
+이걸 켜지 않으면 "클라우드 동기화 켜기"를 눌렀을 때 로그인에 실패한다.
+
+### 3. 테이블 스키마 (SQL Editor에 붙여넣기)
 
 ```sql
 -- 책 (읽은 책 + 위시리스트 공용)
 create table books (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users not null,
+  user_id uuid references auth.users not null default auth.uid(),
   title text not null,
   author text,
   cover_url text,
@@ -60,19 +73,19 @@ create table books (
   created_at timestamptz default now()
 );
 
--- 책 속 한 줄
+-- 책 속 한 줄 (책 1권당 1개 — book_id에 unique를 둬서 upsert로 갱신)
 create table quotes (
   id uuid primary key default gen_random_uuid(),
-  book_id uuid references books on delete cascade,
-  user_id uuid references auth.users not null,
+  book_id uuid references books on delete cascade unique,
+  user_id uuid references auth.users not null default auth.uid(),
   text text not null,
   created_at timestamptz default now()
 );
 
--- 독서 로그 (잔디·스트릭 원천)
+-- 독서 로그 (잔디 · 스트릭 · 이력 탭의 원천)
 create table reading_logs (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users not null,
+  user_id uuid references auth.users not null default auth.uid(),
   date date not null,
   minutes int not null default 20,
   created_at timestamptz default now()
@@ -80,14 +93,17 @@ create table reading_logs (
 
 -- 설정
 create table settings (
-  user_id uuid primary key references auth.users,
+  user_id uuid primary key references auth.users default auth.uid(),
   timer_minutes int default 20,
   reminder_time time,
   kakao_key text
 );
 ```
 
-### 3. RLS (행 수준 보안) — 필수
+> `default auth.uid()`를 넣어두면 클라이언트 코드가 `user_id`를 직접
+> 넘기지 않아도 RLS의 `with check`를 자동으로 통과한다.
+
+### 4. RLS (행 수준 보안) — 필수
 
 ```sql
 -- 각 테이블에 RLS 활성화 후, 본인 데이터만 접근하도록
@@ -106,23 +122,53 @@ create policy "own settings" on settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 ```
 
-### 4. 코드 연결
-로컬 버전의 `state` 메모리 저장 부분을 Supabase 호출로 교체한다.
-- `addBook()` → `supabase.from('books').insert(...)`
-- `state.books` 읽기 → `supabase.from('books').select(...)`
-- 타이머 완료 → `reading_logs`에 insert
+### 5. 코드에 키 입력
 
-> 이 "로컬 → 클라우드 전환"이 바이브코딩 교육의 클라이맥스다.
+`js/config.js`를 열어 1번에서 복사한 값을 넣는다.
+
+```js
+const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+```
+
+> `anon` 키는 RLS로 보호되어 클라이언트 코드(브라우저)에 그대로 노출되어도
+> 안전하다 — Supabase 공식 가이드도 이 방식을 전제로 한다.
+> 카카오 REST 키처럼 숨겨야 하는 진짜 비밀값이 아니다.
+
+### 6. 동작 방식
+
+- 설정(⚙) → **"클라우드 동기화 켜기"** → 익명 로그인 + 이 기기의 로컬 데이터를
+  한 번에 클라우드로 업로드한다.
+- 이후 책 추가/삭제, 한 줄 작성, "읽기 시작"(위시 → 읽은 책 이동),
+  20분/5분 타이머 완료, 설정 변경이 자동으로 `books` / `quotes` /
+  `reading_logs` / `settings` 4개 테이블에 반영된다.
+- 다시 방문(새로고침)하면 클라우드 데이터를 불러와 화면을 갱신한다.
+- **"클라우드 동기화 끄기"**를 누르면 클라우드 데이터는 그대로 두고
+  이 기기만 로컬 저장 모드로 돌아간다.
+- 네트워크 오류 등으로 동기화에 실패해도 콘솔 경고만 남기고
+  앱은 평소처럼(로컬 저장으로) 계속 동작한다.
+
+### 7. 직접 확인하는 법
+
+1. 설정(⚙) → "클라우드 동기화 켜기" 클릭
+2. Supabase 대시보드 → **Table Editor**에서 `books` / `quotes` /
+   `reading_logs` / `settings`에 행이 생겼는지 확인
+3. 페이지를 새로고침해도 책장 · 이력 · 설정이 그대로인지 확인
+4. "클라우드 동기화 끄기"를 눌러도 로컬 데이터가 유지되는지 확인
 
 ---
 
 ## 배포 (Vercel)
 
 ```
-1. GitHub에 푸시
-2. Vercel → Import → 환경변수(SUPABASE_URL, SUPABASE_ANON_KEY, KAKAO_KEY) 입력
+1. js/config.js에 실제 Supabase URL/anon key를 입력(선택)한 뒤 GitHub에 푸시
+2. Vercel → Import
 3. Deploy
 ```
+
+> Supabase 키는 `js/config.js`에 직접 커밋한다(anon key는 RLS로 보호되어
+> 노출돼도 안전). 카카오 REST 키는 코드에 넣지 않고 앱의 설정(⚙) 모달에서
+> 입력 — 기기의 localStorage(또는 클라우드 동기화 시 `settings` 테이블)에 저장된다.
 
 ---
 
