@@ -10,7 +10,8 @@ let state = {
   readDates: [],    // 'YYYY-MM-DD' 독서 완료한 날 목록
   todayMin: 0,
   todayDate: '',    // 날짜가 바뀌면 todayMin 초기화용
-  reminderTime: ''  // 'HH:MM' 저녁 리마인더 시각
+  reminderTime: '', // 'HH:MM' 저녁 리마인더 시각
+  dailyMinutes: {}  // {'YYYY-MM-DD': 분} 날짜별 누적 독서 시간 — 독서 이력 표시용
 };
 
 // 카카오 API 키 — 설정 모달에서 입력, localStorage에 별도 저장
@@ -161,6 +162,8 @@ function finishTimer() {
   if (!state.readDates.includes(todayKey())) {
     state.readDates.push(todayKey());
   }
+  // 날짜별 독서 시간 누적 — 독서 이력 표시용
+  state.dailyMinutes[todayKey()] = (state.dailyMinutes[todayKey()] || 0) + state.timerMin;
   saveState();
   if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
   stopTimer(true);
@@ -170,6 +173,7 @@ function finishTimer() {
   renderStats();
   renderStreak();
   renderHeatmap();
+  renderHistory();
   openDoneModal();
 }
 
@@ -443,6 +447,42 @@ function renderQuotes() {
 }
 
 // ============================================================
+//  독서 이력 (날짜별 독서 시간 목록)
+// ============================================================
+function renderHistory() {
+  const el = $('#historyShelf');
+
+  // 최신 날짜가 먼저 오도록 정렬
+  const entries = Object.entries(state.dailyMinutes)
+    .sort((a, b) => b[0].localeCompare(a[0]));
+
+  if (entries.length === 0) {
+    el.innerHTML = `<div class="empty">
+      <div class="em-ic">📅</div>
+      <p>아직 독서 이력이 없어요.<br>타이머를 완료하면 날짜별로 기록돼요.</p>
+    </div>`;
+    return;
+  }
+
+  const totalDays = entries.length;
+  const totalMin = entries.reduce((sum, [, m]) => sum + m, 0);
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'];
+
+  el.innerHTML = `<div class="history-area">
+    <div class="history-summary">총 ${totalDays}일 · ${totalMin}분 독서</div>
+    ${entries.map(([date, minutes]) => {
+      const d = new Date(date);
+      const isToday = date === todayKey();
+      const label = `${d.getMonth() + 1}월 ${d.getDate()}일 (${weekday[d.getDay()]})`;
+      return `<div class="history-item${isToday ? ' today' : ''}">
+        <div class="history-date">${label}${isToday ? ' · 오늘' : ''}</div>
+        <div class="history-min">${minutes}분</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ============================================================
 //  책장 렌더
 // ============================================================
 function bookCoverHTML(b, cls = '') {
@@ -512,7 +552,7 @@ function renderShelves() {
 }
 
 // ----- 탭 전환 (페이드 애니메이션 포함) -----
-const SHELF_IDS = { read: 'readShelf', wish: 'wishShelf', quotes: 'quotesShelf' };
+const SHELF_IDS = { read: 'readShelf', wish: 'wishShelf', quotes: 'quotesShelf', history: 'historyShelf' };
 
 document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
@@ -526,6 +566,7 @@ document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
       void el.offsetWidth; // 리플로우로 애니메이션 재시작
       el.classList.add('tab-show');
       if (key === 'quotes') renderQuotes();
+      if (key === 'history') renderHistory();
     } else {
       el.style.display = 'none';
     }

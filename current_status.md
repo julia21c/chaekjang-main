@@ -30,11 +30,15 @@
 - **Vercel 배포**: https://chaekjang-nine.vercel.app
 - **vercel.json**: service-worker 캐시 헤더 + 보안 헤더(X-Frame-Options 등)
 
+### Day 5 — 독서 이력 탭 (2026-06-13)
+- **이력 탭 추가** (네 번째 탭): 날짜별 독서 시간 목록. "총 N일 · M분 독서" 요약 + 날짜·요일·분 카드, 최신순 정렬, 오늘 항목 강조
+- **데이터**: `state.dailyMinutes` ({'YYYY-MM-DD': 분}) 신설 — 타이머 완료 시 누적. 기존 `readDates`(히트맵용)는 유지
+
 ---
 
 ## [진행 중 작업]
 
-없음 — v1 완료
+없음 — v1 완료, 이력 탭 추가 완료
 
 ---
 
